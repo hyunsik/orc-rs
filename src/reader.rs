@@ -33,7 +33,7 @@ impl OrcReader {
 
     // read last bytes into buffer to get PostScript
     let read_size = cmp::min(size, DIRECTORY_SIZE_GUESS as u64);
-    fis.read(&mut buf, Some((size - read_size)))?;
+    fis.read_at(&mut buf, size - read_size)?;
 
     let ps_len = (buf[(read_size as usize - LEN_OF_POST_SCRIPT_LEN)] & 0xff) as usize; // Get a post script length
     OrcReader::ensure_footer(&buf, ps_len)?;
@@ -45,9 +45,8 @@ impl OrcReader {
     debug!("ps offset: {}", ps_offset);
     debug!("ps len: {}", ps_len);
     debug!("footer offset: {}", footer_offset);
-    debug!("footer len: {}", ps.get_footerLength());    
+    debug!("footer len: {}", ps.get_footerLength());
     let footer: Footer = OrcReader::extract_footer(&buf, footer_offset, ps.get_footerLength() as usize)?;
-    println!(">>>> {}", footer.get_contentLength());
     Ok(OrcTail {})
   }
 

@@ -1,23 +1,22 @@
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 
 use super::OrcResult;
 
-pub trait InputStream {
+pub trait InputStream: Read + Seek {
   /// Get the total length of the file in bytes.
   fn len(&self) -> u64;
+
+  fn read_at(&mut self, buf: &mut [u8], pos: u64) -> OrcResult<usize> {
+    self.seek(SeekFrom::Start(pos))?;
+    Ok(self.read(buf)?)
+  }
   
   /// Get the number of bytes that should be read at once
   fn default_read_size(&self) -> u64;
 
-  /// Read length bytes from the file starting at offset into the buffer
-  fn read(&mut self, buf: &mut [u8], offset: Option<u64>) -> OrcResult<usize>;
-
   /// Get a name of the stream
   fn name(&self) -> &str;
-
-  /// Close the stream
-  fn close(&mut self);
 }
 
 pub trait OutputStream {
@@ -62,19 +61,19 @@ impl InputStream for FileInputStream {
     DEFAULT_FILE_READ_SIZE
   }
 
-  fn read(&mut self, buf: &mut [u8], offset: Option<u64>) -> OrcResult<usize> {
-    if let Some(pos) = offset {
-      self.file.seek(SeekFrom::Start(pos))?;
-    }
-
-    Ok(self.file.read(buf)?)
-  }
-
   fn name(&self) -> &str {
     &self.path
   }
+}
 
-  fn close(&mut self) {
-    // nothing to do because a File are automatically closed when they go out of scope.
+impl Read for FileInputStream {
+  fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    self.file.read(buf)
+  }
+}
+
+impl Seek for FileInputStream {
+  fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+    self.file.seek(pos)
   }
 }
