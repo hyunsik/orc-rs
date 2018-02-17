@@ -1,6 +1,6 @@
 use super::{OrcErr, OrcResult};
 use fs::{FileInputStream, InputStream};
-use orc_proto::PostScript;
+use orc_proto::{Footer, PostScript};
 
 use std::cmp;
 use std::str;
@@ -39,7 +39,15 @@ impl OrcReader {
     OrcReader::ensure_footer(&buf, ps_len)?;
 
     let ps_offset = (read_size as usize) - 1 - ps_len;
-    let ps: PostScript = OrcReader::extract_postscript(&buf, ps_offset, ps_len)?;    
+    let ps: PostScript = OrcReader::extract_postscript(&buf, ps_offset, ps_len)?;
+    let footer_offset = ps_offset - ps.get_footerLength() as usize;
+    debug!("buf len: {}", buf.len());
+    debug!("ps offset: {}", ps_offset);
+    debug!("ps len: {}", ps_len);
+    debug!("footer offset: {}", footer_offset);
+    debug!("footer len: {}", ps.get_footerLength());    
+    let footer: Footer = OrcReader::extract_footer(&buf, footer_offset, ps.get_footerLength() as usize)?;
+    println!(">>>> {}", footer.get_contentLength());
     Ok(OrcTail {})
   }
 
@@ -63,17 +71,27 @@ impl OrcReader {
     }    
   }
 
-  pub fn extract_postscript(buf: &[u8], ps_offset: usize, ps_len: usize) 
+  fn extract_postscript(buf: &[u8], abs_offset: usize, len: usize) 
       -> OrcResult<PostScript> {
-    let ps_buf = &buf[ps_offset .. ps_offset + ps_len];
+    let ps_buf = &buf[abs_offset .. abs_offset + len];
     let mut coded_stream = CodedInputStream::from_bytes(&ps_buf);
     let mut ps = PostScript::new();
     ps.merge_from(&mut coded_stream).expect("PostScript::merge_from()");
     Ok(ps)
   }
+
+  fn extract_footer(buf: &[u8], abs_offset: usize, len: usize) -> OrcResult<Footer> {
+    let footer_buf = &buf[abs_offset .. abs_offset + len];
+    let mut coded_stream = CodedInputStream::from_bytes(&footer_buf);
+    let mut footer = Footer::new();
+    footer.merge_from(&mut coded_stream).expect("Footer::merge_from()");
+    Ok(footer)
+  }
 }
 
 #[test]
 fn test_tail() {
+  use env_logger;
+  env_logger::init();
   assert!(OrcReader::extract_tail("examples/orc-file-11-format.orc").is_ok());
 }
