@@ -1,0 +1,23 @@
+[package]
+name = "orc-rs"
+version = "0.1.0"
+authors = ["Hyunsik Choi <hyunsik@apache.org"]
+build = "build.rs"
+repository = "https://github.com/hyunsik/orc-rs"
+license = "MIT/Apache-2.0"
+description = "Native Rust ORC implementation"
+
+[lib]
+name = "orc_rs"
+path = "src/lib.rs"
+
+
+[dependencies]
+protobuf = { version = "1.4.3", features = ["with-bytes"] }
+
+[build-dependencies]
+env_logger  = "0.5.*"
+glob        = "0.2"
+log         = "0.*"
+protoc      = "1.4.3"
+protoc-rust = "1.4.3"
