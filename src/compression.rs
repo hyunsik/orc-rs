@@ -1,5 +1,5 @@
 use std::io::{self, Read};
-use flate2::read::ZlibDecoder;
+use flate2::read::DeflateDecoder;
 use orc_proto::CompressionKind;
 use snap;
 
@@ -23,7 +23,7 @@ impl<'a> Read for OrcCompressReader<'a> {
   fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
     debug!("OrcCompressReader::read() enter!");
 
-    match self.reader.read(&mut self.hd_buf) {
+    match self.reader.take(3).read(&mut self.hd_buf) {
       Ok(0) => {
         debug!("OrcCompressReader::read() eof!");
         return Ok(0) // EOF
@@ -44,32 +44,22 @@ impl<'a> Read for OrcCompressReader<'a> {
     let is_origin = (header & 0x01) == 1;
     let chunk_len = (header >> 1) as usize;
     debug!("is_origin: {}", is_origin);
-    debug!("chunk_len: {}", chunk_len);
-
-    let mut chunk: Vec<u8> = Vec::with_capacity(chunk_len);  
-    unsafe { chunk.set_len(chunk_len); };
-    debug!("read_to_end before");
-    self.reader.read_exact(&mut chunk)?;
-    debug!("read_to_end after");
+    debug!("chunk_len: {}", chunk_len);    
 
     if is_origin {
-      buf[..chunk_len].copy_from_slice(&chunk);
-      Ok(chunk_len)
+      Ok(self.reader.take(chunk_len as u64).read(buf)?)
     } else {    
+      let mut chunk: Vec<u8> = Vec::with_capacity(chunk_len);
+      self.reader.take(chunk_len as u64).read_to_end(&mut chunk)?;
+
       let uncompressed_len = match self.codec {
-        CompressionKind::SNAPPY => {
-          let estimated_len = snap::decompress_len(&chunk[..chunk_len]).expect("snap::decompress_len");
-          let mut d = snap::Decoder::new();
-          let mut uncompress_buf = Vec::with_capacity(estimated_len);
-          unsafe { uncompress_buf.set_len(estimated_len)};
-          let uncompressed_len = d.decompress(&chunk[..chunk_len], &mut uncompress_buf)
-            .expect("snap::Decoder::decompress()");
-          buf[..uncompressed_len].copy_from_slice(&uncompress_buf[..uncompressed_len]);
-          uncompressed_len
+        CompressionKind::SNAPPY => {          
+          let mut d = snap::Decoder::new();          
+          d.decompress(&chunk[..chunk_len], buf).expect("snap::decompress")
         }
         CompressionKind::ZLIB => {
-          let mut d = ZlibDecoder::new(&chunk[0..chunk_len]);
-          d.read(buf).expect("ZlibDecoder::read()")
+          let mut d = DeflateDecoder::new(&chunk[..chunk_len]);
+          d.read(buf).expect("DeflateDecoder::read()")
         }
         _ => panic!("unsupported compression codec {:?}", self.codec)
       };
