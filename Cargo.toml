@@ -14,8 +14,10 @@ path = "src/lib.rs"
 
 [dependencies]
 env_logger  = "0.5.*"
+flate2      = { version = "1.0.1", features = ["tokio"] }
 log         = "0.*"
-protobuf = { version = "1.4.3", features = ["with-bytes"] }
+snap        = "0.2.4"
+protobuf    = { version = "1.4.3", features = ["with-bytes"] }
 
 [build-dependencies]
 env_logger  = "0.5.*"

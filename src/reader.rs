@@ -1,13 +1,13 @@
 use super::{OrcErr, OrcResult};
+use compression::OrcCompressReader;
 use fs::{FileInputStream, InputStream};
-use orc_proto::{Footer, PostScript};
+use orc_proto::{Footer, PostScript, CompressionKind};
 
 use std::cmp;
 use std::str;
 use protobuf::{CodedInputStream, Message};
 
 pub struct OrcReader {
-
 }
 
 pub struct OrcTail {
@@ -40,13 +40,22 @@ impl OrcReader {
 
     let ps_offset = (read_size as usize) - 1 - ps_len;
     let ps: PostScript = OrcReader::extract_postscript(&buf, ps_offset, ps_len)?;
-    let footer_offset = ps_offset - ps.get_footerLength() as usize;
+    let footer_len = ps.get_footerLength() as usize;
+    let footer_offset = ps_offset - footer_len;
+    let codec = ps.get_compression();
+    let compressed_block_len = ps.get_compressionBlockSize();
+
     debug!("buf len: {}", buf.len());
     debug!("ps offset: {}", ps_offset);
     debug!("ps len: {}", ps_len);
     debug!("footer offset: {}", footer_offset);
-    debug!("footer len: {}", ps.get_footerLength());
-    let footer: Footer = OrcReader::extract_footer(&buf, footer_offset, ps.get_footerLength() as usize)?;
+    debug!("footer len: {}", footer_len);
+    debug!("compression: {:?}", codec);
+    debug!("compressed_block_len: {}", compressed_block_len);
+    
+    let footer: Footer = 
+      OrcReader::extract_footer(&buf, footer_offset, footer_len, codec)?;
+    debug!("row num: {}", footer.get_numberOfRows());
     Ok(OrcTail {})
   }
 
@@ -54,7 +63,7 @@ impl OrcReader {
     let magic_len = (MAGIC_NUM_LEN + LEN_OF_POST_SCRIPT_LEN) as usize; // length of magic number + post script length
 
     if ps_len < magic_len {
-      return Err(OrcErr::MalformedFormat(
+      return Err(OrcErr::MalformedOrcFormat(
         format!("Malformed ORC file. Invalid postscript length {}", ps_len)));
     }
 
@@ -62,7 +71,7 @@ impl OrcReader {
     let magic_code = &buf[magic_offset..(magic_offset + MAGIC_NUM_LEN)];
 
     if MAGIC_NUM != magic_code {
-      Err(OrcErr::MalformedFormat(
+      Err(OrcErr::MalformedOrcFormat(
         format!("Malformed ORC file. Invalid magic number {}",
         str::from_utf8(magic_code).expect("from_utf8()"))))      
     } else {
@@ -70,8 +79,7 @@ impl OrcReader {
     }    
   }
 
-  fn extract_postscript(buf: &[u8], abs_offset: usize, len: usize) 
-      -> OrcResult<PostScript> {
+  fn extract_postscript(buf: &[u8], abs_offset: usize, len: usize) -> OrcResult<PostScript> {
     let ps_buf = &buf[abs_offset .. abs_offset + len];
     let mut coded_stream = CodedInputStream::from_bytes(&ps_buf);
     let mut ps = PostScript::new();
@@ -79,18 +87,74 @@ impl OrcReader {
     Ok(ps)
   }
 
-  fn extract_footer(buf: &[u8], abs_offset: usize, len: usize) -> OrcResult<Footer> {
+  fn extract_footer(buf: &[u8], abs_offset: usize, len: usize, codec: CompressionKind) 
+      -> OrcResult<Footer> {
     let footer_buf = &buf[abs_offset .. abs_offset + len];
-    let mut coded_stream = CodedInputStream::from_bytes(&footer_buf);
     let mut footer = Footer::new();
-    footer.merge_from(&mut coded_stream).expect("Footer::merge_from()");
+    get_proto_encoded(&footer_buf, codec, &mut footer)?;
     Ok(footer)
   }
 }
 
+fn get_proto_encoded<P>(buf: &[u8], codec: CompressionKind, proto: &mut P) -> OrcResult<()> 
+    where P: Message {    
+  match codec {
+    CompressionKind::NONE => {
+      let mut coded_stream = CodedInputStream::from_bytes(&buf);
+      proto.merge_from(&mut coded_stream).expect("merge_from()");
+    }
+    _ => {
+      let mut slice = &buf[..];
+      let mut codec_reader = OrcCompressReader::new(&mut slice, codec);
+      let mut coded_stream = CodedInputStream::new(&mut codec_reader);
+      proto.merge_from(&mut coded_stream).expect("merge_from()");
+    }
+  };
+  
+  Ok(())
+}
+
 #[test]
-fn test_tail() {
+fn test_none() {
   use env_logger;
   env_logger::init();
   assert!(OrcReader::extract_tail("examples/orc-file-11-format.orc").is_ok());
+}
+
+#[test]
+fn test_zlib() {
+  use env_logger;
+  env_logger::init();
+  assert!(OrcReader::extract_tail("examples/demo-12-zlib.orc").is_ok());
+}
+
+#[test]
+fn test_snappy() {
+  use env_logger;
+  env_logger::init();
+  assert!(OrcReader::extract_tail("examples/TestOrcFile.testSnappy.orc").is_ok());
+}
+
+
+#[test]
+fn test_read() {
+  use std::io::Read;
+  use std::str;
+  use env_logger;
+  env_logger::init();
+  let input: Vec<u8> = vec![b'a',b'b',b'c',b'd', b'e'];
+  
+  let mut read: &[u8] = &input;
+  let r: &mut Read = &mut read;
+  
+  let mut buf: [u8;2] = [0;2];
+  {
+    assert_eq!(r.read(&mut buf).expect("first read"), 2);
+    println!(">>>> {}", str::from_utf8(&buf).expect("from_utf8"));
+  }
+
+  {
+    assert_eq!(r.read(&mut buf).expect("second read"), 2);
+    println!(">>>> {}", str::from_utf8(&buf).expect("from_utf8"));
+  }
 }
