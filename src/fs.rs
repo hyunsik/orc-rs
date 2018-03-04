@@ -3,7 +3,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 
 use super::OrcResult;
 
-pub trait InputStream: Read + Seek {
+pub trait StreamReader: Read + Seek {
   /// Get the total length of the file in bytes.
   fn len(&self) -> u64;
 
@@ -19,7 +19,7 @@ pub trait InputStream: Read + Seek {
   fn name(&self) -> &str;
 }
 
-pub trait OutputStream {
+pub trait StreamWriter {
   /// Get the total length of bytes written.
   fn len(&self) -> u64;
   
@@ -36,14 +36,14 @@ pub trait OutputStream {
   fn close(&mut self);
 }
 
-pub struct FileInputStream {
+pub struct FileReader {
   path: String,
   file: File
 }
 
-impl FileInputStream {
-  pub fn open(path: &str) -> OrcResult<FileInputStream> {
-    Ok(FileInputStream {
+impl FileReader {
+  pub fn open(path: &str) -> OrcResult<FileReader> {
+    Ok(FileReader {
       path: path.to_owned(),
       file: File::open(path)?
     })
@@ -52,7 +52,7 @@ impl FileInputStream {
 
 const DEFAULT_FILE_READ_SIZE: u64 = 128 * 1024;
 
-impl InputStream for FileInputStream {
+impl StreamReader for FileReader {
   fn len(&self) -> u64 {
     self.file.metadata().expect("len()").len()
   }
@@ -66,13 +66,13 @@ impl InputStream for FileInputStream {
   }
 }
 
-impl Read for FileInputStream {
+impl Read for FileReader {
   fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
     self.file.read(buf)
   }
 }
 
-impl Seek for FileInputStream {
+impl Seek for FileReader {
   fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
     self.file.seek(pos)
   }

@@ -10,6 +10,9 @@ mod orc_proto;
 pub mod reader;
 pub mod ty;
 
+use OrcErr::*;
+use std::error::Error;
+use std::fmt;
 use std::io;
 
 pub enum OrcErr {
@@ -17,6 +20,36 @@ pub enum OrcErr {
   MalformedOrcFormat(String),
   InvalidCompressionFormat(String),
   UnsupportedCompressionCodec(String)
+}
+
+impl Error for OrcErr {
+    fn description(&self) -> &str {
+      match *self {
+        IoError(ref ioe) => ioe.description(),
+        MalformedOrcFormat(ref m) => &m,
+        InvalidCompressionFormat(ref m) => &m,
+        UnsupportedCompressionCodec(ref m) => &m,
+      }
+    }
+
+    fn cause(&self) -> Option<&Error> {
+      match *self {
+        IoError(ref ioe) => Some(ioe),
+        _ => None
+      }
+    }
+}
+
+impl fmt::Display for OrcErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.description())
+    }
+}
+
+impl fmt::Debug for OrcErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.description())
+    }
 }
 
 pub type OrcResult<T> = Result<T, OrcErr>;

@@ -1,9 +1,10 @@
 use super::{OrcErr, OrcResult};
 use compression::OrcCompressReader;
-use fs::{FileInputStream, InputStream};
-use orc_proto::{CompressionKind, Footer, PostScript};
+use fs::{FileReader, StreamReader};
+use orc_proto::{CompressionKind, Footer, Metadata, PostScript};
 
 use std::cmp;
+use std::error::Error;
 use std::str;
 use protobuf::{CodedInputStream, Message};
 
@@ -13,30 +14,82 @@ static MAGIC_NUM_LEN: usize = 3;
 static LEN_OF_POST_SCRIPT_LEN: usize = 1;
 const DIRECTORY_SIZE_GUESS: usize = 16 * 1024;
 
+pub trait RecordReader {
+}
+
 pub struct OrcRecordReader {  
 }
 
-pub struct OrcReader {
+impl RecordReader for OrcRecordReader {  
 }
 
-pub struct OrcTail {
-}
+pub struct ReaderOptions {}
 
-impl OrcTail {
-  pub fn empty() -> OrcTail {
-    OrcTail {}
+impl OrcReader {
+  pub fn records() -> OrcRecordReader {
+    OrcRecordReader {}
+  }
+
+  pub fn compression_block_len(&self) -> u64 {
+    self.postscript.get_compressionBlockSize()
+  }
+
+  pub fn compression_codec(&self) -> CompressionKind {
+    self.postscript.get_compression()
+  }
+
+  pub fn row_num(&self) -> u64 {
+    self.footer.get_numberOfRows()
+  }
+
+  pub fn contents_len(&self) -> u64 {
+    self.footer.get_contentLength()
+  }
+
+  pub fn orc_version(&self) -> &[u32] {
+    self.postscript.get_version()
+  }
+
+  pub fn orc_writer_version(&self) -> u32 {
+    self.postscript.get_writerVersion()
   }
 }
 
+pub struct OrcTail {
+  postscript: PostScript,
+  footer: Footer,
+  file_len: u64,
+  postscript_len: u64
+}
+
+pub struct OrcReader {
+  reader: Box<StreamReader>,
+  //metadata: Metadata,
+  footer: Footer,
+  postscript: PostScript,
+}
+
 impl OrcReader {
-  pub fn extract_tail(path: &str) -> OrcResult<OrcTail> {
-    let mut fis = FileInputStream::open(path)?;
+  pub fn open(reader_: Box<StreamReader>) -> OrcResult<OrcReader> {
+    let mut reader = reader_;
+    let file_tail = {
+      OrcReader::extract_tail(&mut *reader)?
+    };
+
+    Ok(OrcReader {
+      reader: reader,
+      postscript: file_tail.postscript,
+      footer: file_tail.footer 
+    })
+  }
+
+  fn extract_tail(is: &mut StreamReader) -> OrcResult<OrcTail> {    
     let mut buf: [u8; DIRECTORY_SIZE_GUESS] = [0; DIRECTORY_SIZE_GUESS];
-    let size = fis.len();
+    let total_len = is.len();
 
     // read last bytes into buffer to get PostScript
-    let read_size = cmp::min(size, DIRECTORY_SIZE_GUESS as u64);
-    fis.read_at(&mut buf, size - read_size)?;
+    let read_size = cmp::min(total_len, DIRECTORY_SIZE_GUESS as u64);
+    is.read_at(&mut buf, total_len - read_size)?;
 
     let ps_len = (buf[(read_size as usize - LEN_OF_POST_SCRIPT_LEN)] & 0xff) as usize; // Get a post script length
     OrcReader::ensure_footer(&buf, ps_len)?;
@@ -59,7 +112,13 @@ impl OrcReader {
     let footer = compressed_bytes_to_proto(&buf[footer_offset..footer_offset+footer_len],
       Footer::new(), codec)?;
     debug!("row num: {}", footer.get_numberOfRows());
-    Ok(OrcTail {})
+    
+    Ok(OrcTail {
+      postscript: ps,
+      footer: footer,
+      file_len: total_len,
+      postscript_len: ps_len as u64
+    })
   }
 
   pub fn ensure_footer(buf: &[u8], ps_len: usize) -> OrcResult<()> {
@@ -84,11 +143,11 @@ impl OrcReader {
 }
 
 #[inline]
-pub fn bytes_to_proto<P>(buf: &[u8], proto: P) -> OrcResult<P> where P: Message {
+fn bytes_to_proto<P>(buf: &[u8], proto: P) -> OrcResult<P> where P: Message {
   compressed_bytes_to_proto(buf, proto, CompressionKind::NONE)
 }
 
-pub fn compressed_bytes_to_proto<P>(buf: &[u8], mut proto: P, codec: CompressionKind)
+fn compressed_bytes_to_proto<P>(buf: &[u8], mut proto: P, codec: CompressionKind)
     -> OrcResult<P> where P: Message {  
   if codec == CompressionKind::NONE {
     let mut coded_stream = CodedInputStream::from_bytes(&buf);    
@@ -103,17 +162,31 @@ pub fn compressed_bytes_to_proto<P>(buf: &[u8], mut proto: P, codec: Compression
   Ok(proto)
 }
 
-#[test]
-fn test_none() {
-  assert!(OrcReader::extract_tail("examples/orc-file-11-format.orc").is_ok());
-}
+#[cfg(test)]
+pub mod tests {
+  use std::error::Error;
+  use super::OrcReader;
+  use ::fs::{FileReader, StreamReader};
 
-#[test]
-fn test_zlib() {
-  assert!(OrcReader::extract_tail("examples/demo-12-zlib.orc").is_ok());
-}
+  fn open_file(path: &str) -> Box<StreamReader> {
+    match FileReader::open(path) {
+      Ok(r) => Box::new(r),
+      Err(e) => panic!("{}", e.description())
+    }
+  }
 
-#[test]
-fn test_snappy() {
-  assert!(OrcReader::extract_tail("examples/TestOrcFile.testSnappy.orc").is_ok());
+  #[test]
+  fn test_none() {
+    open_file("examples/orc-file-11-format.orc");
+  }
+
+  #[test]
+  fn test_zlib() {
+    open_file("examples/demo-12-zlib.orc");
+  }
+
+  #[test]
+  fn test_snappy() {
+    open_file("examples/TestOrcFile.testSnappy.orc");
+  }
 }
