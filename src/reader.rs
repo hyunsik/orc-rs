@@ -1,7 +1,9 @@
 use super::{OrcErr, OrcResult};
 use compression::OrcCompressReader;
 use fs::{FileReader, StreamReader};
-use orc_proto::{CompressionKind, Footer, Metadata, PostScript};
+use orc_proto::{self, CompressionKind, Footer, Metadata, PostScript};
+use ty::Type;
+use version::{self, Version};
 
 use std::cmp;
 use std::error::Error;
@@ -30,7 +32,8 @@ pub struct OrcReader {
   //metadata: Metadata,
   footer: Footer,
   postscript: PostScript,
-  file_len: u64
+  file_len: u64,
+  types: Type
 }
 
 impl OrcReader {
@@ -38,7 +41,7 @@ impl OrcReader {
     OrcRecordReader {}
   }
 
-  pub fn compression_block_len(&self) -> u64 {
+  pub fn compression_buffer_size(&self) -> u64 {
     self.postscript.get_compressionBlockSize()
   }
 
@@ -54,12 +57,16 @@ impl OrcReader {
     self.footer.get_contentLength()
   }
 
-  pub fn orc_version(&self) -> &[u32] {
-    self.postscript.get_version()
+  pub fn format_version(&self) -> &Version {
+    version::find(self.postscript.get_version())
   }
 
   pub fn orc_writer_version(&self) -> u32 {
     self.postscript.get_writerVersion()
+  }
+
+  pub fn types(&self) -> Type {
+    Type::from_proto(self.footer.get_types())
   }
 }
 
@@ -80,8 +87,9 @@ impl OrcReader {
     Ok(OrcReader {
       reader: reader,
       postscript: tail.postscript,
+      types: Type::from_proto(tail.footer.get_types()),
       footer: tail.footer,
-      file_len: tail.file_len
+      file_len: tail.file_len,      
     })
   }
 
@@ -168,7 +176,8 @@ fn compressed_bytes_to_proto<P>(buf: &[u8], mut proto: P, codec: CompressionKind
 pub mod tests {
   use std::error::Error;
   use super::OrcReader;
-  use ::fs::{FileReader, StreamReader};
+  use fs::{FileReader, StreamReader};
+  use version::*;
 
   fn open_file(path: &str) -> Box<StreamReader> {
     match FileReader::open(path) {
@@ -177,18 +186,54 @@ pub mod tests {
     }
   }
 
-  #[test]
-  fn test_none() {
-    open_file("examples/orc-file-11-format.orc");
+  fn assert_file_version(path: &str, version: &Version) {
+    let r = OrcReader::open(open_file(path)).expect(&format!("{} open failed", path));
+    assert_eq!(r.format_version(), version);
+  }
+
+  fn assert_types(path: &str, types_str: &str) {
+    let r = OrcReader::open(open_file(path)).expect(&format!("{} open failed", path));
+    assert_eq!(&format!("{}", r.types()), types_str);
+  }
+
+  fn assert_orc_open(path: &str) {
+    assert!(OrcReader::open(open_file(path)).is_ok());
   }
 
   #[test]
-  fn test_zlib() {
-    open_file("examples/demo-12-zlib.orc");
+  fn test_versions() {
+    assert_file_version("examples/orc-file-11-format.orc", &V_0_11);
+    assert_file_version("examples/demo-12-zlib.orc", &V_0_12);
+  }
+
+  #[test]
+  fn test_types() {
+    assert_types("examples/orc-file-11-format.orc",
+    "struct<boolean1:boolean,byte1:tinyint,short1:smallint,int1:int,\
+    long1:bigint,float1:float,double1:double,bytes1:binary,string1:string,\
+    middle:struct<list:array<struct<int1:int,string1:string>>>,\
+    list:array<struct<int1:int,string1:string>>,\
+    map:map<string,struct<int1:int,string1:string>>,ts:timestamp,decimal1:decimal(10,38)>");
+  }
+
+  #[test]
+  fn test_none_v0_11() {
+    assert_orc_open("examples/orc-file-11-format.orc");
+  }
+
+  // TODO - opening error
+  //#[test]
+  fn test_zlib_v0_11() {
+    assert_orc_open("examples/demo-11-zlib.orc");
+  }
+
+  #[test]
+  fn test_zlib_v0_12() {
+    assert_orc_open("examples/demo-12-zlib.orc");
   }
 
   #[test]
   fn test_snappy() {
-    open_file("examples/TestOrcFile.testSnappy.orc");
+    assert_orc_open("examples/TestOrcFile.testSnappy.orc");
   }
 }

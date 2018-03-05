@@ -1,8 +1,16 @@
-use std::i32;
+use std::fmt;
+
+const MAX_VERSION: u32 = 2147483647;
 
 /// a version number for the ORC file format
 #[derive(Clone, Copy, Hash, PartialEq)]
-pub struct Version(i32, i32, &'static str);
+pub struct Version(u32, u32, &'static str);
+
+impl fmt::Debug for Version {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "ORC {}", self.2)
+  }
+}
 
 pub static V_0_11: Version = Version(0, 11, "0.11");
 pub static V_0_12: Version = Version(0, 12, "0.12");
@@ -14,39 +22,40 @@ pub static V_0_12: Version = Version(0, 12, "0.12");
 /// When 2.0 is released, this version identifier will be completely removed.
 pub static UNSTABLE_PRE_2_0: Version = Version(1, 9999, "UNSTABLE-PRE-2.0");
 /// The generic identifier for all unknown versions.
-pub static FURTURE: Version = Version(i32::MAX, i32::MAX, "future");
+pub static FURTURE: Version = Version(MAX_VERSION, MAX_VERSION, "future");
 
-fn find(versions: &[i32]) -> Version {
+pub fn find(versions: &[u32]) -> &Version {
   assert!(versions.len() == 2, 
     "wrong version: versions has {} numbers", versions.len());
   
   match (versions[0],versions[1]) {
-    (0, 11) => V_0_11,
-    (0, 12) => V_0_12,
-    (1, 9999) => UNSTABLE_PRE_2_0,
-    (i32::MAX, i32::MAX) => FURTURE,
+    (0, 11) => &V_0_11,
+    (0, 12) => &V_0_12,
+    (1, 9999) => &UNSTABLE_PRE_2_0,
+    (MAX_VERSION, MAX_VERSION) => &FURTURE,
     // Others are not intended
     _ => panic!("Unknown ORC version: major ({}), minor ({})", versions[0], versions[0])
   }
 } 
 
 pub mod writer {
+  use super::MAX_VERSION;
   use std::i32;
 
-  pub struct WriterVersion (i32, i32);
+  pub struct WriterVersion (u32, u32);
 
   ///////////////////////////////////
   // Writer Implementations
   ///////////////////////////////////
   /// ORC Java Writer
-  pub const JAVA_IMPL: i32 = 0;
+  pub const JAVA_IMPL: u32 = 0;
   /// ORC C++ Writer
-  pub const CPP_IMPL: i32 = 1;
+  pub const CPP_IMPL: u32 = 1;
   /// Presto Writer
-  pub const PRESTO_IMPL: i32 = 2;
+  pub const PRESTO_IMPL: u32 = 2;
   /// Go writer from https://github.com/scritchley/orc
-  pub const SCRITCHLEY_GO_IMPL: i32 = 3;
-  pub const UNKNOWN_IMPL: i32 = i32::MAX;
+  pub const SCRITCHLEY_GO_IMPL: u32 = 3;
+  pub const UNKNOWN_IMPL: u32 = i32::MAX as u32;
 
   ///////////////////////////////////
   // Java ORC Writer
@@ -76,5 +85,5 @@ pub mod writer {
   /// Scritchley Go Writer
   pub static SCRITCHLEY_GO_ORIGINAL: WriterVersion = WriterVersion(SCRITCHLEY_GO_IMPL, 6);
   /// Don't use any magic numbers here except for the below:
-  pub static FUTURE: WriterVersion = WriterVersion(UNKNOWN_IMPL, i32::MAX);
+  pub static FUTURE: WriterVersion = WriterVersion(UNKNOWN_IMPL, MAX_VERSION);
 }

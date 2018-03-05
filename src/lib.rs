@@ -1,5 +1,6 @@
 extern crate flate2;
 extern crate env_logger;
+#[macro_use] extern crate itertools;
 #[macro_use] extern crate log;
 extern crate snap;
 extern crate protobuf;
@@ -15,7 +16,6 @@ use OrcErr::*;
 use std::error::Error;
 use std::fmt;
 use std::io;
-use std::i32;
 
 pub enum OrcErr {
   IoError(io::Error),
