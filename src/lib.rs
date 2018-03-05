@@ -9,11 +9,13 @@ pub mod fs;
 mod orc_proto;
 pub mod reader;
 pub mod ty;
+pub mod version;
 
 use OrcErr::*;
 use std::error::Error;
 use std::fmt;
 use std::io;
+use std::i32;
 
 pub enum OrcErr {
   IoError(io::Error),

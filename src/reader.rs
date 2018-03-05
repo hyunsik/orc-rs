@@ -25,6 +25,14 @@ impl RecordReader for OrcRecordReader {
 
 pub struct ReaderOptions {}
 
+pub struct OrcReader {
+  reader: Box<StreamReader>,
+  //metadata: Metadata,
+  footer: Footer,
+  postscript: PostScript,
+  file_len: u64
+}
+
 impl OrcReader {
   pub fn records() -> OrcRecordReader {
     OrcRecordReader {}
@@ -55,31 +63,25 @@ impl OrcReader {
   }
 }
 
-pub struct OrcTail {
+struct OrcTail {
   postscript: PostScript,
   footer: Footer,
   file_len: u64,
-  postscript_len: u64
-}
-
-pub struct OrcReader {
-  reader: Box<StreamReader>,
-  //metadata: Metadata,
-  footer: Footer,
-  postscript: PostScript,
+  postscript_len: u64,
 }
 
 impl OrcReader {
   pub fn open(reader_: Box<StreamReader>) -> OrcResult<OrcReader> {
     let mut reader = reader_;
-    let file_tail = {
+    let tail = {
       OrcReader::extract_tail(&mut *reader)?
     };
 
     Ok(OrcReader {
       reader: reader,
-      postscript: file_tail.postscript,
-      footer: file_tail.footer 
+      postscript: tail.postscript,
+      footer: tail.footer,
+      file_len: tail.file_len
     })
   }
 
